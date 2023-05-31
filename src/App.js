@@ -1,208 +1,214 @@
-import * as THREE from "three";
-import { useEffect, useRef, useState } from "react";
-import { Canvas } from "@react-three/fiber";
-import { OrbitControls } from "@react-three/drei";
-import { Geometry, Base, Subtraction, Addition } from "@react-three/csg";
-import { Environment } from "./Environment";
-import "./App.css";
 import Web3 from "web3";
-import HouseNFT from "./build/contracts/HouseNFT.json";
-import Modal from "react-modal";
+import { Suspense, useState, useEffect } from "react";
+import { Canvas } from "@react-three/fiber";
+import { Sky, MapControls } from "@react-three/drei";
+import { Physics } from "@react-three/cannon";
 
-const box = new THREE.BoxGeometry();
-const cyl = new THREE.CylinderGeometry(1, 1, 2, 20);
-const tri = new THREE.CylinderGeometry(1, 1, 2, 3);
+// Import CSS
+import "./App.css";
 
-Modal.setAppElement("#root");
+// Import Components
+import Navbar from "./components/Navbar";
+import Plane from "./components/Plane";
+import Plot from "./components/Plot";
+import Building from "./components/Building";
 
-export default function App() {
-  const web3 = new Web3(window.ethereum);
-  const contractInterface = HouseNFT.abi;
-  const contractAddress = "0x16Ee620be2B13a321Af3CDbEb9Ce70Ca481549d4";
-  const contractInstance = new web3.eth.Contract(
-    contractInterface,
-    contractAddress
-  );
+// Import ABI
+import Land from "./abis/Land.json";
 
-  const [isWalletConnected, setIsWalletConnected] = useState(false);
-  const [cost, setCost] = useState(0); // Coût d'une maison
-  const [houses, setHouses] = useState([
-    { owner: null, position: [0, 0, 0] },
-    { owner: null, position: [5, 0, 0] },
-    { owner: null, position: [0, 0, 5] },
-    { owner: null, position: [5, 0, 5] },
-  ]);
+function App() {
+  const [web3, setWeb3] = useState(null);
+  const [account, setAccount] = useState(null);
 
-  const [isModalOpen, setIsModalOpen] = useState(false);
-  const [selectedHouseOwner, setSelectedHouseOwner] = useState("");
+  // Contract & Contract States
+  const [landContract, setLandContract] = useState(null);
 
-  const connectWallet = async () => {
-    try {
-      // Demande l'autorisation de se connecter
-      await window.ethereum.enable();
+  const [cost, setCost] = useState(0);
+  const [buildings, setBuildings] = useState(null);
+  const [landId, setLandId] = useState(null);
+  const [landName, setLandName] = useState(null);
+  const [landOwner, setLandOwner] = useState(null);
+  const [hasOwner, setHasOwner] = useState(false);
 
-      // Récupère l'adresse du compte connecté
+  const loadBlockchainData = async () => {
+    if (typeof window.ethereum !== "undefined") {
+      const web3 = new Web3(window.ethereum);
+      setWeb3(web3);
+
       const accounts = await web3.eth.getAccounts();
-      const address = accounts[0];
 
-      setIsWalletConnected(true);
-    } catch (error) {
-      console.log(error);
+      if (accounts.length > 0) {
+        setAccount(accounts[0]);
+      }
+
+      const networkId = await web3.eth.net.getId();
+
+      const land = new web3.eth.Contract(
+        Land.abi,
+        Land.networks[networkId].address
+      );
+      setLandContract(land);
+
+      const cost = await land.methods.cost().call();
+      setCost(web3.utils.fromWei(cost.toString(), "ether"));
+
+      const buildings = await land.methods.getBuildings().call();
+      setBuildings(buildings);
+
+      // Event listeners...
+      window.ethereum.on("accountsChanged", function (accounts) {
+        setAccount(accounts[0]);
+      });
+
+      window.ethereum.on("chainChanged", (chainId) => {
+        window.location.reload();
+      });
     }
   };
 
-  const handleBuyHouse = async (index) => {
-    try {
-      if (houses[index].owner) {
-        return;
-      }
-
-      const accounts = await web3.eth.getAccounts();
-      const address = accounts[0];
-
-      const result = await contractInstance.methods
-        .mint()
-        .send({ from: address, value: cost, gas: 500000 });
-
-      const owner = address;
-
-      setHouses((prevHouses) => {
-        const updatedHouses = [...prevHouses];
-        updatedHouses[index] = { owner };
-        return updatedHouses;
+  // MetaMask Login/Connect
+  const web3Handler = async () => {
+    if (web3) {
+      const accounts = await window.ethereum.request({
+        method: "eth_requestAccounts",
       });
-    } catch (error) {
-      console.log("Error:", error);
+      setAccount(accounts[0]);
     }
   };
 
   useEffect(() => {
-    connectWallet();
+    loadBlockchainData();
+  }, [account]);
 
-    contractInstance.methods
-      .cost()
-      .call()
-      .then((result) => {
-        setCost(result);
-      });
-  }, []);
+  const buyHandler = async (_id) => {
+    try {
+      const gasCost = await landContract.methods.mint(_id).estimateGas();
+      const gasPrice = await web3.eth.getGasPrice();
+      const transactionGasCost = gasCost * gasPrice;
 
-  const handleMouseEnter = (owner) => {
-    if (owner && owner == "0x16Ee620be2B13a321Af3CDbEb9Ce70Ca481549d4") {
-      setSelectedHouseOwner(owner);
-      setIsModalOpen(true);
+      await landContract.methods
+        .mint(_id)
+        .send({ from: account, value: cost + transactionGasCost });
+
+      const buildings = await landContract.methods.getBuildings().call();
+      setBuildings(buildings);
+
+      setLandName(buildings[_id - 1].name);
+      setLandOwner(buildings[_id - 1].owner);
+      setHasOwner(true);
+    } catch (error) {
+      window.alert("Error occurred when buying");
     }
   };
 
-  return (
-    <div id="canvas-container">
-      {isWalletConnected ? (
-        <Canvas shadows camera={{ position: [-15, 10, 15], fov: 25 }}>
-          <color attach="background" args={["skyblue"]} />
-          {houses.map((house, index) => (
-            <House
-              key={index}
-              owner={house.owner}
-              onClick={() => handleBuyHouse(index)}
-              position={house.position}
-              onMouseEnter={() => handleMouseEnter(house.owner)}
-            />
-          ))}
+  if (!account) {
+    return (
+      <div
+        style={{
+          display: "flex",
+          justifyContent: "center",
+          alignItems: "center",
+          height: "100vh",
+        }}
+      >
+        <h2>Veuillez connecter votre portefeuille MetaMask pour continuer</h2>
+      </div>
+    );
+  }
 
-          <Environment />
-          <OrbitControls makeDefault />
-        </Canvas>
-      ) : (
-        <div className="connect-wallet">
-          Connectez votre wallet pour afficher le contenu
+  return (
+    <div>
+      <Navbar web3Handler={web3Handler} account={account} />
+      <Canvas camera={{ position: [0, 0, 30], up: [0, 0, 1], far: 10000 }}>
+        <Suspense fallback={null}>
+          <Sky
+            distance={450000}
+            sunPosition={[1, 10, 0]}
+            inclination={0}
+            azimuth={0.25}
+          />
+
+          <ambientLight intensity={0.5} />
+
+          {/* Load in each cell */}
+          <Physics>
+            {buildings &&
+              buildings.map((building, index) => {
+                if (
+                  building.owner ===
+                  "0x0000000000000000000000000000000000000000"
+                ) {
+                  return (
+                    <Plot
+                      key={index}
+                      position={[building.posX, building.posY, 0.1]}
+                      size={[building.sizeX, building.sizeY]}
+                      landId={index + 1}
+                      landInfo={building}
+                      setLandName={setLandName}
+                      setLandOwner={setLandOwner}
+                      setHasOwner={setHasOwner}
+                      setLandId={setLandId}
+                    />
+                  );
+                } else {
+                  return (
+                    <Building
+                      key={index}
+                      position={[building.posX, building.posY, 0.1]}
+                      size={[building.sizeX, building.sizeY, building.sizeZ]}
+                      landId={index + 1}
+                      landInfo={building}
+                      setLandName={setLandName}
+                      setLandOwner={setLandOwner}
+                      setHasOwner={setHasOwner}
+                      setLandId={setLandId}
+                    />
+                  );
+                }
+              })}
+          </Physics>
+
+          <Plane />
+        </Suspense>
+        <MapControls />
+      </Canvas>
+
+      {landId && (
+        <div className="info">
+          <h1 className="flex">{landName}</h1>
+
+          <div className="flex-left">
+            <div className="info--id">
+              <h2>ID</h2>
+              <p>{landId}</p>
+            </div>
+
+            <div className="info--owner">
+              <h2>Owner</h2>
+              <p>{landOwner}</p>
+            </div>
+
+            {!hasOwner && (
+              <div className="info--owner">
+                <h2>Cost</h2>
+                <p>{`${cost} ETH`}</p>
+              </div>
+            )}
+          </div>
+
+          {!hasOwner && (
+            <button
+              onClick={() => buyHandler(landId)}
+              className="button info--buy"
+            >
+              Buy Property
+            </button>
+          )}
         </div>
       )}
-
-      {/* <Modal
-        isOpen={isModalOpen}
-        onRequestClose={() => setIsModalOpen(false)}
-        contentLabel="Propriétaire de la maison"
-        className="custom-modal"
-      >
-        <h2>Propriétaire de la maison</h2>
-        <p>{selectedHouseOwner}</p>
-      </Modal> */}
     </div>
   );
 }
 
-function House(props) {
-  const csg = useRef();
-  const { owner } = props;
-
-  let materialColor = "white";
-
-  if (owner) {
-    if (owner === "0x16Ee620be2B13a321Af3CDbEb9Ce70Ca481549d4") {
-      materialColor = "green"; // Votre maison (propriétaire)
-    } else {
-      materialColor = "red"; // Maison achetée par quelqu'un d'autre
-    }
-  }
-
-  return (
-    <mesh
-      onClick={props.onClick}
-      receiveShadow
-      castShadow
-      position={props.position}
-      onPointerEnter={props.onMouseEnter}
-    >
-      <Geometry ref={csg} computeVertexNormals>
-        <Base name="base" geometry={box} scale={[3, 3, 3]} />
-        <Subtraction name="cavity" geometry={box} scale={[2.7, 2.7, 2.7]} />
-        <Addition
-          name="roof"
-          geometry={tri}
-          scale={[2.5, 1.5, 1.425]}
-          rotation={[-Math.PI / 2, 0, 0]}
-          position={[0, 2.2, 0]}
-        />
-      </Geometry>
-      <meshStandardMaterial color={materialColor} envMapIntensity={0.25} />
-    </mesh>
-  );
-}
-
-const Door = (props) => (
-  <Subtraction {...props}>
-    <Geometry>
-      <Base geometry={box} scale={[1, 2, 1]} />
-      <Addition
-        geometry={cyl}
-        scale={0.5}
-        rotation={[Math.PI / 2, 0, 0]}
-        position={[0, 1, 0]}
-      />
-    </Geometry>
-  </Subtraction>
-);
-
-const Window = (props) => (
-  <Subtraction {...props}>
-    <Geometry>
-      <Base geometry={box} />
-      <Subtraction geometry={box} scale={[0.05, 1, 1]} />
-      <Subtraction geometry={box} scale={[1, 0.05, 1]} />
-    </Geometry>
-  </Subtraction>
-);
-
-const Chimney = (props) => (
-  <Addition name="chimney" {...props}>
-    <Geometry>
-      <Base name="base" geometry={box} scale={[1, 2, 1]} />
-      <Subtraction
-        name="hole"
-        geometry={box}
-        scale={[0.7, 2, 0.7]}
-        position={[0, 0.5, 0]}
-      />
-    </Geometry>
-  </Addition>
-);
+export default App;
