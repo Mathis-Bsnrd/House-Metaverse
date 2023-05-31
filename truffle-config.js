@@ -9,7 +9,7 @@ module.exports = {
       provider: function () {
         return new HDWalletProvider(
           mnemonic,
-          `https://rpc-mumbai.maticvigil.com/`
+          `https://polygon-mumbai.g.alchemy.com/v2/zakNeAd4C3mw21NxPPKBGPnO9A_eExib`
         );
       },
       network_id: "*",
