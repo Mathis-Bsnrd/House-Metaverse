@@ -13,7 +13,7 @@ const Building = ({ position, size, landId, landInfo, setLandName, setLandOwner,
         setLandId(landId)
 
         if (landInfo.owner === '0x0000000000000000000000000000000000000000') {
-            setLandOwner('No Owner')
+            setLandOwner('Aucun propriétaire')
             setHasOwner(false)
         } else {
             setLandOwner(landInfo.owner)

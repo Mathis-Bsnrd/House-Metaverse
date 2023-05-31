@@ -82,13 +82,8 @@ function App() {
 
   const buyHandler = async (_id) => {
     try {
-      const gasCost = await landContract.methods.mint(_id).estimateGas();
-      const gasPrice = await web3.eth.getGasPrice();
-      const transactionGasCost = gasCost * gasPrice;
-
-      await landContract.methods
-        .mint(_id)
-        .send({ from: account, value: cost + transactionGasCost });
+      const weiCost = web3.utils.toWei(cost.toString(), "ether");
+      await landContract.methods.mint(_id).send({ from: account, value: weiCost });
 
       const buildings = await landContract.methods.getBuildings().call();
       setBuildings(buildings);
@@ -97,7 +92,7 @@ function App() {
       setLandOwner(buildings[_id - 1].owner);
       setHasOwner(true);
     } catch (error) {
-      window.alert("Error occurred when buying");
+      console.log(error);
     }
   };
 
@@ -185,13 +180,13 @@ function App() {
             </div>
 
             <div className="info--owner">
-              <h2>Owner</h2>
+              <h2>Propriétaire</h2>
               <p>{landOwner}</p>
             </div>
 
             {!hasOwner && (
               <div className="info--owner">
-                <h2>Cost</h2>
+                <h2>Coût</h2>
                 <p>{`${cost} ETH`}</p>
               </div>
             )}
@@ -202,7 +197,7 @@ function App() {
               onClick={() => buyHandler(landId)}
               className="button info--buy"
             >
-              Buy Property
+              Acheter la maison
             </button>
           )}
         </div>

@@ -4,7 +4,7 @@ pragma solidity ^0.8.0;
 import "@openzeppelin/contracts/token/ERC721/ERC721.sol";
 
 contract Land is ERC721 {
-    uint256 public cost = 0.01 ether;
+    uint256 public cost = 1 ether;
     uint256 public maxSupply = 5;
     uint256 public totalSupply = 0;
 
@@ -39,7 +39,7 @@ contract Land is ERC721 {
         uint256 supply = totalSupply;
         require(supply <= maxSupply);
         require(buildings[_id - 1].owner == address(0x0));
-        require(msg.value >= cost);
+        require(msg.value >= 1 ether);
 
         // NOTE: tokenID always starts from 1, but our array starts from 0
         buildings[_id - 1].owner = msg.sender;
